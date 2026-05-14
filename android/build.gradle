@@ -1,6 +1,6 @@
 buildscript {
     ext {
-        buildToolsVersion = "36.0.0"
+        buildToolsVersion = "36.1.0"
         minSdkVersion = 24
         compileSdkVersion = 36
         targetSdkVersion = 36
@@ -19,3 +19,12 @@ buildscript {
 }
 
 apply plugin: "com.facebook.react.rootproject"
+
+subprojects {
+    plugins.withId("com.android.library") {
+        android.buildToolsVersion = "36.1.0"
+    }
+    plugins.withId("com.android.application") {
+        android.buildToolsVersion = "36.1.0"
+    }
+}
