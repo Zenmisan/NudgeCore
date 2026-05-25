@@ -1,97 +1,223 @@
-This is a new [**React Native**](https://reactnative.dev) project, bootstrapped using [`@react-native-community/cli`](https://github.com/react-native-community/cli).
+# NudgeCore
 
-# Getting Started
+A React Native task manager that keeps your to-do list in front of you through persistent, ambient notifications — not a calendar you scroll past and ignore.
 
-> **Note**: Make sure you have completed the [Set Up Your Environment](https://reactnative.dev/docs/set-up-your-environment) guide before proceeding.
+NudgeCore runs a foreground service that evaluates your task list every 30 seconds and surfaces the most relevant pending task in your notification shade. You respond directly from the notification: mark it done, say you're working on it, or push it aside for later. The app then moves on to the next thing.
 
-## Step 1: Start Metro
+---
 
-First, you will need to run **Metro**, the JavaScript build tool for React Native.
+## How it works
 
-To start the Metro dev server, run the following command from the root of your React Native project:
+### Task scheduling
+- Tasks without a due date ("anytime" tasks) are surfaced randomly while they're eligible.
+- Tasks with a due date are prioritized once their time arrives.
+- **Done** — marks the task complete and immediately surfaces the next one.
+- **Working on it** — snoozes the task for 25 minutes.
+- **Later** — snoozes the task for a random 1–10 minutes (dismissing the notification has the same effect).
+
+### Foreground service
+The app registers an Android foreground service on launch. This service runs a polling loop every 30 seconds to evaluate which task should be shown. It persists even when the app is backgrounded or the screen is off, ensuring you're never left without a nudge.
+
+### Local-only storage
+All data lives on-device:
+- **SQLite** (via `op-sqlite`) — task records with status, due time, and snooze state.
+- **MMKV** — fast key-value store for runtime state (active task ID, last evaluation timestamp).
+
+---
+
+## Tech stack
+
+| Layer | Library |
+|---|---|
+| Framework | React Native 0.85.3 / React 19.2.3 |
+| Language | TypeScript |
+| Database | `@op-engineering/op-sqlite` |
+| Notifications | `@notifee/react-native` |
+| Runtime state | `react-native-mmkv` |
+| Navigation | `@react-navigation/native` + `native-stack` |
+| Date picker | `@react-native-community/datetimepicker` |
+| JS engine | Hermes |
+| Architecture | React Native New Architecture (Nitro Modules, Fabric) |
+| Package manager | Bun |
+
+---
+
+## Prerequisites
+
+Before setting up, make sure you have the full React Native environment installed. Follow the official guide for your OS:
+
+- [Set up your environment — React Native docs](https://reactnative.dev/docs/set-up-your-environment)
+
+You will need:
+- **Node.js** >= 22.11.0
+- **Bun** (used instead of npm/yarn — install from [bun.sh](https://bun.sh))
+- **Android Studio** with Android SDK, platform tools, and an emulator or physical device
+- **Java 17** (required by the Gradle build)
+- **Watchman** (recommended for file watching on macOS/Linux)
+
+For iOS builds you additionally need:
+- **Xcode** (macOS only) with Command Line Tools
+- **CocoaPods** via Bundler (`gem install bundler`)
+
+---
+
+## Setup
+
+### 1. Clone and install dependencies
 
 ```sh
-# Using npm
-npm start
-
-# OR using Yarn
-yarn start
+git clone <repo-url>
+cd NudgeCore
+bun install
 ```
 
-## Step 2: Build and run your app
+### 2. Android — run in development
 
-With Metro running, open a new terminal window/pane from the root of your React Native project, and use one of the following commands to build and run your Android or iOS app:
-
-### Android
+Start the Metro bundler in one terminal:
 
 ```sh
-# Using npm
-npm run android
-
-# OR using Yarn
-yarn android
+bun run start
 ```
 
-### iOS
+In a second terminal, build and launch on your connected device or emulator:
 
-For iOS, remember to install CocoaPods dependencies (this only needs to be run on first clone or after updating native deps).
+```sh
+bun run android
+```
 
-The first time you create a new project, run the Ruby bundler to install CocoaPods itself:
+> **Note:** NudgeCore uses native modules (`op-sqlite`, `notifee`, `react-native-mmkv`) that require a native build — Expo Go will not work.
+
+### 3. iOS — run in development (macOS only)
+
+Install Ruby gems and CocoaPods (first time only, or after native dependency changes):
 
 ```sh
 bundle install
-```
-
-Then, and every time you update your native dependencies, run:
-
-```sh
 bundle exec pod install
 ```
 
-For more information, please visit [CocoaPods Getting Started guide](https://guides.cocoapods.org/using/getting-started.html).
+Then run:
 
 ```sh
-# Using npm
-npm run ios
-
-# OR using Yarn
-yarn ios
+bun run ios
 ```
 
-If everything is set up correctly, you should see your new app running in the Android Emulator, iOS Simulator, or your connected device.
+> The foreground service feature is Android-only. On iOS the app will launch, but background nudging is not yet implemented.
 
-This is one way to run your app — you can also build it directly from Android Studio or Xcode.
+---
 
-## Step 3: Modify your app
+## Project structure
 
-Now that you have successfully run the app, let's make changes!
+```
+NudgeCore/
+├── index.js                     # Entry point: foreground service + background event handler registration
+├── App.tsx                      # Root component: navigation, DB init, notification bootstrap
+├── src/
+│   ├── types.ts                 # Task type definition
+│   ├── theme.ts                 # Dark color palette, spacing, border radius
+│   ├── utils.ts                 # generateId, randomSnoozeMs, formatDueAt
+│   ├── db/
+│   │   └── index.ts             # SQLite layer: CRUD operations + priority task query
+│   ├── services/
+│   │   ├── notifications.ts     # Notification channels, foreground service notif, task notif display
+│   │   ├── scheduler.ts         # Core logic: evaluateAndDisplay, handleDone/Working/Later
+│   │   ├── foreground.ts        # Foreground service task (30s polling loop)
+│   │   └── runtime.ts           # MMKV-backed runtime state (activeTaskId, lastEvaluatedAt)
+│   └── screens/
+│       ├── TaskListScreen.tsx   # Pending task list + foreground notification event handler
+│       └── AddTaskScreen.tsx    # New task form (title, description, optional due date/time)
+├── android/                     # Android native project
+│   └── app/
+│       └── build.gradle         # App ID: com.nudgecore, versionCode 1
+└── ios/                         # iOS native project
+```
 
-Open `App.tsx` in your text editor of choice and make some changes. When you save, your app will automatically update and reflect these changes — this is powered by [Fast Refresh](https://reactnative.dev/docs/fast-refresh).
+---
 
-When you want to forcefully reload, for example to reset the state of your app, you can perform a full reload:
+## Notification channels
 
-- **Android**: Press the <kbd>R</kbd> key twice or select **"Reload"** from the **Dev Menu**, accessed via <kbd>Ctrl</kbd> + <kbd>M</kbd> (Windows/Linux) or <kbd>Cmd ⌘</kbd> + <kbd>M</kbd> (macOS).
-- **iOS**: Press <kbd>R</kbd> in iOS Simulator.
+| Channel | Purpose | Importance |
+|---|---|---|
+| `nudgecore_tasks` | Task reminder notifications with action buttons | High (heads-up) |
+| `nudgecore_service` | Persistent foreground service indicator | Low (silent, hidden on lock screen) |
 
-## Congratulations! :tada:
+The foreground service notification is required by Android to keep the background service alive. It shows in the notification shade as "NudgeCore — Watching your task list..." and updates to show the current task title.
 
-You've successfully run and modified your React Native App. :partying_face:
+---
 
-### Now what?
+## Required Android permissions
 
-- If you want to add this new React Native code to an existing application, check out the [Integration guide](https://reactnative.dev/docs/integration-with-existing-apps).
-- If you're curious to learn more about React Native, check out the [docs](https://reactnative.dev/docs/getting-started).
+These are declared in the native Android manifest (managed by `@notifee/react-native`):
 
-# Troubleshooting
+- `FOREGROUND_SERVICE` — run the background polling service
+- `FOREGROUND_SERVICE_SPECIAL_USE` — required for foreground services on Android 14+
+- `POST_NOTIFICATIONS` — show task and service notifications (requested at runtime)
+- `RECEIVE_BOOT_COMPLETED` — (available for future auto-start on device reboot)
 
-If you're having issues getting the above steps to work, see the [Troubleshooting](https://reactnative.dev/docs/troubleshooting) page.
+---
 
-# Learn More
+## Development commands
 
-To learn more about React Native, take a look at the following resources:
+```sh
+bun run start          # Start Metro bundler
+bun run android        # Build and run on Android
+bun run ios            # Build and run on iOS
+bun run test           # Run Jest tests
+bun run lint           # Run ESLint
+```
 
-- [React Native Website](https://reactnative.dev) - learn more about React Native.
-- [Getting Started](https://reactnative.dev/docs/environment-setup) - an **overview** of React Native and how setup your environment.
-- [Learn the Basics](https://reactnative.dev/docs/getting-started) - a **guided tour** of the React Native **basics**.
-- [Blog](https://reactnative.dev/blog) - read the latest official React Native **Blog** posts.
-- [`@facebook/react-native`](https://github.com/facebook/react-native) - the Open Source; GitHub **repository** for React Native.
+---
+
+## Database schema
+
+```sql
+CREATE TABLE tasks (
+  id            TEXT    PRIMARY KEY,
+  title         TEXT    NOT NULL,
+  description   TEXT,
+  due_at        INTEGER,           -- Unix ms, null = anytime task
+  next_remind_at INTEGER,          -- Unix ms, null = eligible now
+  status        TEXT    NOT NULL DEFAULT 'pending',  -- 'pending' | 'completed'
+  created_at    INTEGER NOT NULL,
+  updated_at    INTEGER NOT NULL,
+  source        TEXT    NOT NULL DEFAULT 'phone'
+);
+
+CREATE INDEX idx_tasks_status_remind ON tasks (status, next_remind_at);
+```
+
+The `source` field is reserved for future multi-source support (e.g., tasks pushed from a desktop companion). Currently always set to `'phone'`.
+
+---
+
+## What's not done yet
+
+See [TODO list in memory](project_todo.md) for the full list. Key gaps:
+
+- **Completed tasks view** — no screen to see finished tasks
+- **Edit task** — tasks can be added and deleted but not modified
+- **iOS background handling** — foreground service is Android-only; iOS needs BGTaskScheduler
+- **Release signing** — currently uses the debug keystore for release builds
+- **Proguard** — disabled in `build.gradle`, should be enabled for production APK/AAB
+- **Tests** — only a single smoke test; no coverage of scheduler logic or DB functions
+
+---
+
+## Troubleshooting
+
+**Metro bundler can't find native module**
+Run `bun run android` (a full native build) before using Metro. Native modules require a compiled native layer.
+
+**`op-sqlite` crash on launch**
+This usually means the New Architecture bridging failed. Confirm `newArchEnabled=true` in `android/gradle.properties` and that your `@react-native/react-native` version matches the native module's peer dependency.
+
+**Foreground service notification not appearing**
+On Android 13+, notification permission must be granted at runtime. The app requests this on launch via `requestNotifPermission()`. Check app settings if the permission was denied.
+
+**Build fails with JVM memory error**
+Increase the Gradle JVM heap in `android/gradle.properties`:
+```
+org.gradle.jvmargs=-Xmx2048m -XX:MaxMetaspaceSize=512m
+```
+
+For further React Native issues, see the [official troubleshooting guide](https://reactnative.dev/docs/troubleshooting).
